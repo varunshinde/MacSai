@@ -275,6 +275,46 @@ final class ManagedExtensionsClientTests: XCTestCase {
         )
     }
 
+    func testPreCancelledCaptureDoesNotExecute() async {
+        let task = Task { () -> String in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return Self.captureForCancellationTest()
+        }
+        let output = await task.value
+        XCTAssertEqual(output, "")
+    }
+
+    private static func captureForCancellationTest() -> String {
+        ManagedExtensionsClient.captureStandardOutput(
+            of: URL(filePath: "/usr/bin/printf"), arguments: ["launched"])
+    }
+
+    func testPreCancelledPluginKitOverlayDoesNotLaunch() async {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await ManagedExtensionsClient.runPluginKit(
+                executable: URL(filePath: "/usr/bin/printf"), arguments: ["launched"])
+        }
+        let output = await task.value
+        XCTAssertEqual(output, "")
+    }
+
+    func testPluginKitOverlayDeadlineFallsBackWithoutHanging() async {
+        let start = ContinuousClock.now
+        let output = await ManagedExtensionsClient.runPluginKit(
+            executable: URL(filePath: "/bin/sleep"), arguments: ["2"], timeout: .milliseconds(100))
+        XCTAssertEqual(output, "")
+        XCTAssertLessThan(start.duration(to: .now), .seconds(1))
+    }
+
+    func testPluginKitOverlayPreservesLargeOutput() async {
+        let script = "i=0; while [ $i -lt 5000 ]; do printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; i=$((i+1)); done"
+        let output = await ManagedExtensionsClient.runPluginKit(
+            executable: URL(filePath: "/bin/sh"), arguments: ["-c", script])
+        XCTAssertEqual(output.filter { $0 == "\n" }.count, 5000)
+        XCTAssertGreaterThan(output.utf8.count, 200_000)
+    }
+
     // Regression: capturing a command whose output exceeds the ~64KB pipe
     // buffer must not deadlock. Before the fix, waitUntilExit ran before the
     // pipe was drained and the Extensions page hung on "Looking for extensions…".

@@ -58,6 +58,7 @@ public actor AppDiscovery {
     /// discovery. Real installs nest an app one or two folders deep at most.
     static func appBundles(in dir: URL, maxDepth: Int = 4,
                            fileManager: FileManager = .default) -> [URL] {
+        guard !Task.isCancelled else { return [] }
         guard let enumerator = fileManager.enumerator(
             at: dir,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -66,13 +67,14 @@ public actor AppDiscovery {
 
         var found: [URL] = []
         while let url = enumerator.nextObject() as? URL {
+            guard !Task.isCancelled else { return [] }
             if enumerator.level >= maxDepth { enumerator.skipDescendants() }
             if url.pathExtension == "app" {
                 found.append(url)
                 enumerator.skipDescendants()   // never recurse into a bundle
             }
         }
-        return found
+        return Task.isCancelled ? [] : found
     }
 
     private func appInfo(from url: URL) -> AppInfo? {

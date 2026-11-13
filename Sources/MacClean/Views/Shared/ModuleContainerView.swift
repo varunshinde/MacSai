@@ -11,6 +11,8 @@ struct ModuleContainerView: View {
     @Binding var selectedItems: Set<URL>
     let isScanning: Bool
     let scanProgress: Double
+    /// Use a spinner when the backend cannot report measured progress.
+    let scanIsIndeterminate: Bool
     let scanPhase: String
     let scanComplete: Bool
     /// `nil` until clean has run. When set, the doneView renders one of
@@ -28,6 +30,7 @@ struct ModuleContainerView: View {
     /// the misleading "nothing to clean up" one.
     let permissionDenied: Bool
     let onScan: () -> Void
+    let onCancelScan: (() -> Void)?
     let onClean: () -> Void
     let onCancelClean: (() -> Void)?
     let onReset: () -> Void
@@ -60,12 +63,14 @@ struct ModuleContainerView: View {
         selectedItems: Binding<Set<URL>>,
         isScanning: Bool,
         scanProgress: Double = 0.5,
+        scanIsIndeterminate: Bool = false,
         scanPhase: String = L10n.tr("正在扫描...", "Scanning...", "Сканирование..."),
         scanComplete: Bool = false,
         completion: CleanSummary? = nil,
         cleaning: CleaningEngine.Progress? = nil,
         permissionDenied: Bool = false,
         onScan: @escaping () -> Void,
+        onCancelScan: (() -> Void)? = nil,
         onClean: @escaping () -> Void,
         onCancelClean: (() -> Void)? = nil,
         onReset: @escaping () -> Void,
@@ -82,12 +87,14 @@ struct ModuleContainerView: View {
         self._selectedItems = selectedItems
         self.isScanning = isScanning
         self.scanProgress = scanProgress
+        self.scanIsIndeterminate = scanIsIndeterminate
         self.scanPhase = scanPhase
         self.scanComplete = scanComplete
         self.completion = completion
         self.cleaning = cleaning
         self.permissionDenied = permissionDenied
         self.onScan = onScan
+        self.onCancelScan = onCancelScan
         self.onClean = onClean
         self.onCancelClean = onCancelClean
         self.onReset = onReset
@@ -239,9 +246,24 @@ struct ModuleContainerView: View {
     }
 
     private var scanningView: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: scanIsIndeterminate || onCancelScan != nil ? 24 : 0) {
             Spacer()
-            ScanProgressRing(progress: scanProgress, phase: scanPhase, theme: theme)
+            if scanIsIndeterminate {
+                ProgressView()
+                    .controlSize(.large)
+                Text(scanPhase)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                ScanProgressRing(progress: scanProgress, phase: scanPhase, theme: theme)
+            }
+            if let onCancelScan {
+                Button(L10n.tr("取消扫描", "Cancel Scan", "Отменить сканирование")) { onCancelScan() }
+                    .buttonStyle(.bordered)
+                    .tint(.primary)
+                    .controlSize(.large)
+            }
             Spacer()
         }
     }

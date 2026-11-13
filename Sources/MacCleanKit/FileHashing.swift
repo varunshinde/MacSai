@@ -18,18 +18,22 @@ public enum FileHashing {
 
     /// Every requested digest from a single read of the file, so asking for
     /// both SHA-1 and SHA-256 costs one pass over the bytes, not two. Empty
-    /// if the file can't be opened.
+    /// if the file can't be read or the calling task is cancelled. Cancellation
+    /// is checked between chunks; a partial digest is never returned.
     public static func digests(of url: URL, algorithms: Set<MalwareHashAlgorithm>) -> [MalwareHashAlgorithm: String] {
-        guard !algorithms.isEmpty, let handle = try? FileHandle(forReadingFrom: url) else { return [:] }
+        guard !Task.isCancelled, !algorithms.isEmpty,
+              let handle = try? FileHandle(forReadingFrom: url) else { return [:] }
         defer { try? handle.close() }
         var sha1 = algorithms.contains(.sha1) ? Insecure.SHA1() : nil
         var sha256 = algorithms.contains(.sha256) ? SHA256() : nil
         while true {
+            guard !Task.isCancelled else { return [:] }
             let chunk = handle.readData(ofLength: 65536)
             if chunk.isEmpty { break }
             sha1?.update(data: chunk)
             sha256?.update(data: chunk)
         }
+        guard !Task.isCancelled else { return [:] }
         var result: [MalwareHashAlgorithm: String] = [:]
         if let sha1 { result[.sha1] = hex(sha1.finalize()) }
         if let sha256 { result[.sha256] = hex(sha256.finalize()) }
