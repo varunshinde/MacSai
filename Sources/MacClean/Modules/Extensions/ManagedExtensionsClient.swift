@@ -162,16 +162,29 @@ struct ManagedExtensionsClient: Sendable {
         return plist
     }
 
-    private static func runPluginKit() async -> String {
-        captureStandardOutput(of: URL(filePath: "/usr/bin/pluginkit"), arguments: ["-m", "-v"])
+    /// Election metadata is optional for the Extensions catalog. Failures leave
+    /// elections unknown; this fallback must not be interpreted as a clean
+    /// malware scan. Security callers should use the throwing capture directly
+    /// (or skip the election overlay, which does not discover filesystem items).
+    static func runPluginKit(
+        executable: URL = URL(filePath: "/usr/bin/pluginkit"),
+        arguments: [String] = ["-m", "-v"],
+        timeout: Duration = .seconds(5)
+    ) async -> String {
+        (try? await SubprocessCapture.standardOutput(
+            of: executable, arguments: arguments, timeout: timeout
+        )) ?? ""
     }
 
+    /// Legacy synchronous adapter for BrowserExtensionsClient. This is not
+    /// cancellable once launched; new async callers must use SubprocessCapture.
     /// Run a process and return its stdout, draining the pipe BEFORE
     /// `waitUntilExit`. Reading after waiting deadlocks: a command with more
     /// output than the ~64KB pipe buffer (pluginkit lists hundreds of plug-ins)
     /// blocks writing while we block waiting, and the load never completes.
     /// stderr is discarded to /dev/null so it can't fill and deadlock either.
     static func captureStandardOutput(of executable: URL, arguments: [String]) -> String {
+        guard !Task.isCancelled else { return "" }
         let process = Process()
         let outputPipe = Pipe()
         process.executableURL = executable
